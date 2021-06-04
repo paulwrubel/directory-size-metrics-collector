@@ -3,8 +3,9 @@
 sudo ./collector \
     --address $1 \
     --database $2 \
-    --directories "/var/lib/docker/volumes" \
+    --directories "/var/lib/docker/volumes,/mnt/diamond/docker/data" \
     --interval "5m" \
-    --loglevel trace \
-    --reportingdepth 1
-    # --dry \
+    --log-level info \
+    --reporting-depth 1 \
+    --tags "set_name=docker_volumes"
+    #--dry \

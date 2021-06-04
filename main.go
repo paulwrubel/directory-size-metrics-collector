@@ -35,26 +35,32 @@ func main() {
 	flag.BoolVar(&dry, "dry", false, "simulate but do not send metrics")
 
 	var logLevel string
-	flag.StringVar(&logLevel, "loglevel", "info", "specify log level")
+	flag.StringVar(&logLevel, "log-level", "info", "specify log level")
 
 	var reportingDepth int
-	flag.IntVar(&reportingDepth, "reportingdepth", 0,
+	flag.IntVar(&reportingDepth, "reporting-depth", 0,
 		`directory depth to report metrics for. 0 will only report for the given directory list, while 
 		1 will report tags for the given directory list and all their immediate subdirectories, and so on.
 		The default value is 0.`)
+
+	var tags string
+	flag.StringVar(&tags, "tags", "", "optional additional tags for measurements sent to influx")
 
 	// parsing flags
 	log.Infoln("parsing flags")
 	flag.Parse()
 	log.WithFields(log.Fields{
-		"database":       database,
-		"address":        address,
-		"interval":       interval,
-		"directories":    directories,
-		"dry":            dry,
-		"loglevel":       logLevel,
-		"reportingdepth": reportingDepth,
+		"database":        database,
+		"address":         address,
+		"interval":        interval,
+		"directories":     directories,
+		"dry":             dry,
+		"log-level":       logLevel,
+		"reporting-depth": reportingDepth,
+		"tags":            tags,
 	}).Infoln("flags successfully parsed")
+
+	log.Infoln("validating flags")
 
 	// setting log level based on debug flag
 	switch logLevel {
@@ -91,16 +97,6 @@ func main() {
 		log.WithField("missing_fields", strings.Join(missingFlags, ",")).Fatalln("missing flags")
 	}
 
-	// initializing influxdb client
-	log.WithField("address", address).Infoln("initializing influxdb client")
-	influxClient, err := influx.NewHTTPClient(influx.HTTPConfig{
-		Addr: address,
-	})
-	if err != nil {
-		log.WithError(err).Fatalln("error initializing influxdb client")
-	}
-	defer influxClient.Close()
-
 	// reformatting directories
 	log.Infoln("reformatting directories")
 	dirSlice := strings.Split(directories, ",")
@@ -113,7 +109,7 @@ func main() {
 			}
 			newDir = strings.ReplaceAll(dir, "~", currentUser.HomeDir)
 		}
-		newDir, err = filepath.Abs(newDir)
+		newDir, err := filepath.Abs(newDir)
 		if err != nil {
 			log.WithError(err).WithField("directory", newDir).Fatalln("error getting absolute path for directory")
 		}
@@ -140,6 +136,29 @@ func main() {
 		dirSlice = newDirSlice
 	}
 
+	// initialized additional provided tags
+	additionalTags := map[string]string{}
+	if tags != "" {
+		tagsSlice := strings.Split(tags, ",")
+		for _, tag := range tagsSlice {
+			keyValueTag := strings.Split(tag, "=")
+			if len(keyValueTag) != 2 {
+				log.Fatalln("tags are malformatted. must be in form \"key=value,another_key=another_value,...\"")
+			}
+			additionalTags[keyValueTag[0]] = keyValueTag[1]
+		}
+	}
+
+	// initializing influxdb client
+	log.WithField("address", address).Infoln("initializing influxdb client")
+	influxClient, err := influx.NewHTTPClient(influx.HTTPConfig{
+		Addr: address,
+	})
+	if err != nil {
+		log.WithError(err).Fatalln("error initializing influxdb client")
+	}
+	defer influxClient.Close()
+
 	// starting metrics ticker
 	log.WithField("interval", interval.String()).Infoln("starting metrics ticker")
 	metricsTicker := time.NewTicker(interval)
@@ -165,11 +184,11 @@ func main() {
 			}
 
 			for k, v := range dirSizeMap {
-				point, err := influx.NewPoint("directory_size_in_bytes", map[string]string{
+				point, err := influx.NewPoint("directory_size_in_bytes", mergeTagSets(additionalTags, map[string]string{
 					"absolute_path":  k,
 					"directory_path": filepath.Dir(k),
 					"base_path":      filepath.Base(k),
-				}, map[string]interface{}{
+				}), map[string]interface{}{
 					"value": v,
 				})
 				if err != nil {
@@ -186,7 +205,10 @@ func main() {
 				continue
 			}
 
-			influxClient.Write(batchPoints)
+			err = influxClient.Write(batchPoints)
+			if err != nil {
+				log.WithError(err).Errorln("error writing points to influx")
+			}
 		}
 	}()
 
@@ -200,16 +222,21 @@ func main() {
 	os.Exit(0)
 }
 
-func getAllDirSizesInBytes(logEntry *log.Entry, directories []string) map[string]uint64 {
+func getAllDirSizesInBytes(logEntry *log.Entry, directories []string) map[string]int64 {
 
 	log.Traceln("starting directory scan")
 
-	directorySizeMap := map[string]uint64{}
+	directorySizeMap := map[string]int64{}
 
 	for _, directory := range directories {
 		log.WithField("directory", directory).Traceln("starting directory scan")
 
-		directorySizeMap[directory] = getSingleDirSizeInBytes(logEntry, directory)
+		directorySize, err := getSingleDirSizeInBytes(logEntry, directory)
+		if err != nil {
+			log.WithError(err).Errorln("error getting directory size, skipping...")
+			continue
+		}
+		directorySizeMap[directory] = directorySize
 
 		log.WithField("directory", directory).Traceln("finished directory scan")
 	}
@@ -219,9 +246,9 @@ func getAllDirSizesInBytes(logEntry *log.Entry, directories []string) map[string
 	return directorySizeMap
 }
 
-func getSingleDirSizeInBytes(logEntry *log.Entry, directory string) uint64 {
-	var totalBytes uint64
-	filepath.WalkDir(directory, func(path string, d fs.DirEntry, err error) error {
+func getSingleDirSizeInBytes(logEntry *log.Entry, directory string) (int64, error) {
+	var totalBytes int64
+	err := filepath.WalkDir(directory, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -229,9 +256,22 @@ func getSingleDirSizeInBytes(logEntry *log.Entry, directory string) uint64 {
 		if err != nil {
 			return err
 		}
-		totalBytes += uint64(fileInfo.Size())
+		totalBytes += fileInfo.Size()
 
 		return nil
 	})
-	return totalBytes
+	if err != nil {
+		return 0, err
+	}
+	return totalBytes, nil
+}
+
+func mergeTagSets(tagSets ...map[string]string) map[string]string {
+	mergedTags := map[string]string{}
+	for _, tagSet := range tagSets {
+		for k, v := range tagSet {
+			mergedTags[k] = v
+		}
+	}
+	return mergedTags
 }
