@@ -1,0 +1,12 @@
+influx:
+  address: http://10.0.0.7:8086
+  database: telegraf
+directories: 
+  - /mnt/diamond/media/television
+reporting:
+  interval: 1s
+  depth: 1
+  tags:
+    set_name: diamond_test
+logging:
+  level: trace

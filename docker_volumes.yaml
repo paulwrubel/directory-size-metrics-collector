@@ -1,0 +1,13 @@
+influx:
+  address: http://10.0.0.7:8086
+  database: telegraf
+directories: 
+  - /var/lib/docker/volumes
+  - /mnt/diamond/docker/data
+reporting:
+  interval: 15m
+  depth: 1
+  tags:
+    set_name: docker_volumes
+logging:
+  level: info

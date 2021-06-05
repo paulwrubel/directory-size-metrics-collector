@@ -1,0 +1,17 @@
+influx:
+  address: http://10.0.0.7:8086
+  database: telegraf
+directories: 
+  - /mnt/diamond
+  - /mnt/diamond/media
+  - /mnt/diamond/media/anime
+  - /mnt/diamond/media/movies
+  - /mnt/diamond/media/television
+  - /mnt/diamond/media/youtube
+reporting:
+  interval: 15m
+  depth: 1
+  tags:
+    set_name: diamond
+logging:
+  level: info
