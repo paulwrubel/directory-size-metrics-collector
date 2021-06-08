@@ -1,0 +1,60 @@
+kind: pipeline
+type: docker
+name: directory-size-metrics-collector
+
+clone:
+  disable: true
+
+steps:
+- name: clone
+  image: alpine/git
+  commands:
+  - git clone --single-branch --branch $DRONE_SOURCE_BRANCH --depth=1 $DRONE_GIT_HTTP_URL .
+
+- name: build
+  image: golang:1.16
+  commands: 
+  - GOOS=linux 
+    GOARCH=amd64 
+    CGO_ENABLED=0 
+    go build -o collector main.go
+  when:
+    branch:
+    - main
+    event:
+    - push
+    - pull_request
+    - tag
+
+- name: publish-dev
+  image: plugins/docker
+  settings:
+    username:
+      from_secret: docker_username
+    password: 
+      from_secret: docker_password
+    repo: paulwrubel/directory-size-metrics-collector
+    tags:
+    - dev
+  when:
+    branch:
+    - main
+    event:
+    - push
+
+- name: publish
+  image: plugins/docker
+  settings:
+    username:
+      from_secret: docker_username
+    password: 
+      from_secret: docker_password
+    repo: paulwrubel/directory-size-metrics-collector
+    tags:
+    - latest
+    - prod
+  when:
+    branch:
+    - main
+    event:
+    - tag
