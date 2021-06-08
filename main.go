@@ -5,11 +5,11 @@ import (
 	"io/fs"
 	"os"
 	"os/signal"
-	"os/user"
 	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/davecgh/go-spew/spew"
 	influx "github.com/influxdata/influxdb1-client/v2"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
@@ -59,9 +59,7 @@ func main() {
 
 	log.Debugln("logging detected config below:")
 	log.Debugln("--------")
-	for key, value := range viper.AllSettings() {
-		log.Debugf("%s = %v", key, value)
-	}
+	spew.Dump(viper.AllSettings())
 	log.Debugln("--------")
 
 	// checking for missing keys
@@ -80,16 +78,8 @@ func main() {
 	}
 
 	// trimming directories
-	directories := viper.GetStringSlice("directories")
+	directories := viper.Get("sets")
 	for i := range directories {
-		directories[i] = strings.TrimSpace(directories[i])
-		if strings.Contains(directories[i], "~") {
-			currentUser, err := user.Current()
-			if err != nil {
-				log.WithError(err).WithField("directory", directories[i]).Fatalln("error getting current user's to replace '~' with user's home path in directory")
-			}
-			directories[i] = strings.ReplaceAll(directories[i], "~", currentUser.HomeDir)
-		}
 		directories[i], err = filepath.Abs(directories[i])
 		if err != nil {
 			log.WithError(err).WithField("directory", directories[i]).Fatalln("error getting absolute path for directory")
