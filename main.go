@@ -107,8 +107,8 @@ func main() {
 
 	// expanding directories to desired depth
 	log.Infoln("expanding directories to desired depth")
-	for i := 0; i < viper.GetInt("reporting.depth"); i++ {
-		for i := range sets {
+	for i, set := range sets {
+		for j := 0; i < set.Depth; j++ {
 			newDirMappingSlice := []DirectoryMapping{}
 			for _, directoryMapping := range sets[i].DirectoryMappings {
 				subdirs, err := os.ReadDir(directoryMapping.Internal)
@@ -216,7 +216,7 @@ func main() {
 
 func getAllDirSizesInBytes(logEntry *log.Entry, directoryMappings []DirectoryMapping) map[DirectoryMapping]int64 {
 
-	log.Traceln("starting directory scan")
+	log.Traceln("starting directories scan")
 
 	directorySizeMap := map[DirectoryMapping]int64{}
 
@@ -233,7 +233,7 @@ func getAllDirSizesInBytes(logEntry *log.Entry, directoryMappings []DirectoryMap
 		log.WithField("directory_mapping", directoryMapping).Traceln("finished directory scan")
 	}
 
-	log.Traceln("finished directory scan")
+	log.Traceln("finished directories scan")
 
 	return directorySizeMap
 }
