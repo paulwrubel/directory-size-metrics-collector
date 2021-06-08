@@ -154,7 +154,9 @@ func main() {
 		for ; true; <-metricsTicker.C {
 			for _, set := range sets {
 				tickTime := time.Now()
-				logEntry := log.WithTime(tickTime)
+				logEntry := log.WithTime(tickTime).WithField("set", set.Name)
+
+				logEntry.Infoln("starting scan")
 
 				dirSizeMap := getAllDirSizesInBytes(logEntry, set.DirectoryMappings)
 
@@ -197,10 +199,10 @@ func main() {
 					continue
 				}
 
-				log.Infoln("sending points to influx")
+				logEntry.Infoln("sending points to influx")
 				err = influxClient.Write(batchPoints)
 				if err != nil {
-					log.WithError(err).Errorln("error writing points to influx")
+					logEntry.WithError(err).Errorln("error writing points to influx")
 				}
 			}
 		}
