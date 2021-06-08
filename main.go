@@ -205,6 +205,7 @@ func main() {
 					logEntry.WithError(err).Errorln("error writing points to influx")
 				}
 			}
+			log.Infoln("waiting for next interval...")
 		}
 	}()
 
