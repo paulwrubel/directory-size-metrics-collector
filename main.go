@@ -78,7 +78,7 @@ func main() {
 	}
 
 	// trimming directories
-	directories := viper.Get("sets")
+	directories := viper.Get("sets").([]string)
 	for i := range directories {
 		directories[i], err = filepath.Abs(directories[i])
 		if err != nil {
