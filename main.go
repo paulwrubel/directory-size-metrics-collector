@@ -141,7 +141,7 @@ func main() {
 
 	// starting metrics ticker
 	database := viper.GetString("influx.database")
-	isDry := viper.GetBool("is_dry")
+	isDry := viper.GetBool("dry")
 	interval := viper.GetDuration("reporting.interval")
 
 	log.WithField("interval", interval.String()).Infoln("starting metrics ticker")
