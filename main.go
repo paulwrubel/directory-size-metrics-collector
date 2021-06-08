@@ -117,13 +117,16 @@ func main() {
 				}
 				for _, subdir := range subdirs {
 					if subdir.IsDir() {
-						newDirMappingSlice = append(newDirMappingSlice, DirectoryMapping{
+						newDirMapping := DirectoryMapping{
 							External: filepath.Join(directoryMapping.External, subdir.Name()),
 							Internal: filepath.Join(directoryMapping.Internal, subdir.Name()),
-						})
+						}
+						log.WithField("new_mapping", newDirMapping).Debugln("appending to new mapping")
+						newDirMappingSlice = append(newDirMappingSlice, newDirMapping)
 					}
 				}
 			}
+			log.Debugln("updating mapping for %v with sub-mappings", sets[i].DirectoryMappings)
 			sets[i].DirectoryMappings = newDirMappingSlice
 		}
 	}
