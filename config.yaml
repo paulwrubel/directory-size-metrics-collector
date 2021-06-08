@@ -1,0 +1,45 @@
+influx:
+  address: http://10.0.0.7:8086
+  database: telegraf
+reporting:
+  interval: 15m
+logging:
+  level: trace
+sets:
+  - name: diamond
+    directories:
+      - external: /mnt/diamond
+        internal: /dirs/diamond
+    depth: 1
+  - name: diamond_media
+    directories:
+      - external: /mnt/diamond/media
+        internal: /dirs/diamond/media
+    depth: 1
+  - name: diamond_media_anime
+    directories:
+      - external: /mnt/diamond/media/anime
+        internal: /dirs/diamond/media/anime
+    depth: 1
+  - name: diamond_media_movies
+    directories:
+      - external: /mnt/diamond/media/movies
+        internal: /dirs/diamond/media/movies
+    depth: 1
+  - name: diamond_media_television
+    directories:
+      - external: /mnt/diamond/media/television
+        internal: /dirs/diamond/media/television
+    depth: 1
+  - name: diamond_media_youtube
+    directories:
+      - external: /mnt/diamond/media/youtube
+        internal: /dirs/diamond/media/youtube
+    depth: 1
+  - name: docker_volumes
+    directories:
+      - external: /var/lib/docker/volumes
+        internal: /dirs/docker/internal/volumes
+      - external: /mnt/diamond/docker/data
+        internal: /dirs/docker/external/volumes
+    depth: 1

@@ -11,7 +11,5 @@ directories:
 reporting:
   interval: 15m
   depth: 1
-  tags:
-    set_name: diamond
 logging:
-  level: info
+  level: trace

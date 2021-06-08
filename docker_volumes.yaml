@@ -10,4 +10,4 @@ reporting:
   tags:
     set_name: docker_volumes
 logging:
-  level: info
+  level: trace

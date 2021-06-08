@@ -25,12 +25,6 @@ func main() {
 		log.WithError(errors.New("not enough arguments")).Fatalln("usage: ./collector [CONFIG_FILE].yaml")
 	}
 
-	// setting reasonable config defaults
-	viper.SetDefault("reporting.interval", 10*time.Second)
-	viper.SetDefault("logging.level", "info")
-	viper.SetDefault("reporting.depth", 0)
-	viper.SetDefault("is_dry", false)
-
 	viper.SetConfigFile(os.Args[1])
 	err := viper.ReadInConfig()
 	if err != nil {
@@ -78,8 +72,8 @@ func main() {
 	if !viper.IsSet("influx.address") {
 		missingKeys = append(missingKeys, "address")
 	}
-	if !viper.IsSet("directories") {
-		missingKeys = append(missingKeys, "directories")
+	if !viper.IsSet("sets") {
+		missingKeys = append(missingKeys, "sets")
 	}
 	if len(missingKeys) > 0 {
 		log.WithField("missing_keys", strings.Join(missingKeys, ",")).Fatalln("missing keys in config")
@@ -143,8 +137,10 @@ func main() {
 	metricsTicker := time.NewTicker(interval)
 	defer metricsTicker.Stop()
 	go func() {
-		for t := range metricsTicker.C {
-			logEntry := log.WithTime(t)
+		for ; true; <-metricsTicker.C {
+			tickTime := time.Now()
+			logEntry := log.WithTime(tickTime)
+
 			dirSizeMap := getAllDirSizesInBytes(logEntry, directories)
 
 			for k, v := range dirSizeMap {
@@ -169,7 +165,7 @@ func main() {
 					"base_path":      filepath.Base(k),
 				}), map[string]interface{}{
 					"value": v,
-				})
+				}, tickTime)
 				if err != nil {
 					logEntry.WithField("directory", k).WithError(err).Errorln("error creating point for influx, skipping...")
 					continue
@@ -180,7 +176,7 @@ func main() {
 			}
 
 			if isDry {
-				logEntry.Debugln("dry run: skipping reporting")
+				logEntry.Infoln("dry run: skipping reporting")
 				continue
 			}
 
