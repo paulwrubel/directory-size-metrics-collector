@@ -15,6 +15,17 @@ import (
 	"github.com/spf13/viper"
 )
 
+type Set struct {
+	Name              string             `mapstructure:"name"`
+	DirectoryMappings []DirectoryMapping `mapstructure:"directories"`
+	Depth             int                `mapstructure:"depth"`
+}
+
+type DirectoryMapping struct {
+	External string `mapstructure:"external"`
+	Internal string `mapstructure:"internal"`
+}
+
 func main() {
 
 	log.SetOutput(os.Stdout)
@@ -59,7 +70,7 @@ func main() {
 
 	log.Debugln("logging detected config below:")
 	log.Debugln("--------")
-	spew.Dump(viper.AllSettings())
+	log.Debugln(spew.Sdump(viper.AllSettings()))
 	log.Debugln("--------")
 
 	// checking for missing keys
@@ -77,33 +88,44 @@ func main() {
 		log.WithField("missing_keys", strings.Join(missingKeys, ",")).Fatalln("missing keys in config")
 	}
 
+	var sets []Set
+	viper.UnmarshalKey("sets", &sets)
+
 	// trimming directories
-	directories := viper.Get("sets").([]string)
-	for i := range directories {
-		directories[i], err = filepath.Abs(directories[i])
-		if err != nil {
-			log.WithError(err).WithField("directory", directories[i]).Fatalln("error getting absolute path for directory")
+	for i := range sets {
+		for j, directoryMapping := range sets[i].DirectoryMappings {
+			// sets[i].DirectoryMappings[j].External, err = filepath.Abs(directoryMapping.External)
+			// if err != nil {
+			// 	log.WithError(err).WithField("directory", sets[i].DirectoryMappings[j].External).Fatalln("error getting absolute path for external directory")
+			// }
+			sets[i].DirectoryMappings[j].Internal, err = filepath.Abs(directoryMapping.Internal)
+			if err != nil {
+				log.WithError(err).WithField("directory", sets[i].DirectoryMappings[j].Internal).Fatalln("error getting absolute path for internal directory")
+			}
 		}
 	}
 
 	// expanding directories to desired depth
 	log.Infoln("expanding directories to desired depth")
 	for i := 0; i < viper.GetInt("reporting.depth"); i++ {
-		newDirSlice := []string{}
-
-		for _, dir := range directories {
-			subdirs, err := os.ReadDir(dir)
-			if err != nil {
-				log.WithError(err).WithField("directory", dir).Fatalln("error reading directory for expansion")
-			}
-			for _, subdir := range subdirs {
-				if subdir.IsDir() {
-					newDirSlice = append(newDirSlice, filepath.Join(dir, subdir.Name()))
+		for i := range sets {
+			newDirMappingSlice := []DirectoryMapping{}
+			for _, directoryMapping := range sets[i].DirectoryMappings {
+				subdirs, err := os.ReadDir(directoryMapping.Internal)
+				if err != nil {
+					log.WithError(err).WithField("directory", directoryMapping.Internal).Fatalln("error reading directory for expansion")
+				}
+				for _, subdir := range subdirs {
+					if subdir.IsDir() {
+						newDirMappingSlice = append(newDirMappingSlice, DirectoryMapping{
+							External: filepath.Join(directoryMapping.External, subdir.Name()),
+							Internal: filepath.Join(directoryMapping.Internal, subdir.Name()),
+						})
+					}
 				}
 			}
+			sets[i].DirectoryMappings = newDirMappingSlice
 		}
-
-		directories = newDirSlice
 	}
 
 	// initializing influxdb client
@@ -119,7 +141,6 @@ func main() {
 
 	// starting metrics ticker
 	database := viper.GetString("influx.database")
-	additionalTags := viper.GetStringMapString("reporting.tags")
 	isDry := viper.GetBool("is_dry")
 	interval := viper.GetDuration("reporting.interval")
 
@@ -128,52 +149,56 @@ func main() {
 	defer metricsTicker.Stop()
 	go func() {
 		for ; true; <-metricsTicker.C {
-			tickTime := time.Now()
-			logEntry := log.WithTime(tickTime)
+			for _, set := range sets {
+				tickTime := time.Now()
+				logEntry := log.WithTime(tickTime)
 
-			dirSizeMap := getAllDirSizesInBytes(logEntry, directories)
+				dirSizeMap := getAllDirSizesInBytes(logEntry, set.DirectoryMappings)
 
-			for k, v := range dirSizeMap {
-				logEntry.WithFields(log.Fields{
-					"directory": k,
-					"size":      v,
-				}).Debugln("found directory size")
-			}
+				for k, v := range dirSizeMap {
+					logEntry.WithFields(log.Fields{
+						"directory_mapping": k,
+						"size":              v,
+					}).Debugln("found directory size")
+				}
 
-			batchPoints, err := influx.NewBatchPoints(influx.BatchPointsConfig{
-				Database: database,
-			})
-			if err != nil {
-				logEntry.WithError(err).Errorln("error creating batch points for influx, skipping...")
-				continue
-			}
-
-			for k, v := range dirSizeMap {
-				point, err := influx.NewPoint("directory_size_in_bytes", mergeTagSets(additionalTags, map[string]string{
-					"absolute_path":  k,
-					"directory_path": filepath.Dir(k),
-					"base_path":      filepath.Base(k),
-				}), map[string]interface{}{
-					"value": v,
-				}, tickTime)
+				batchPoints, err := influx.NewBatchPoints(influx.BatchPointsConfig{
+					Database: database,
+				})
 				if err != nil {
-					logEntry.WithField("directory", k).WithError(err).Errorln("error creating point for influx, skipping...")
+					logEntry.WithError(err).Errorln("error creating batch points for influx, skipping...")
 					continue
 				}
-				logEntry.Debugf("adding point: %s", point.String())
 
-				batchPoints.AddPoint(point)
-			}
+				for k, v := range dirSizeMap {
+					point, err := influx.NewPoint("directory_size_in_bytes", map[string]string{
+						"application":    "directory-size-metrics-collector",
+						"set":            set.Name,
+						"absolute_path":  k.External,
+						"directory_path": filepath.Dir(k.External),
+						"base_path":      filepath.Base(k.External),
+					}, map[string]interface{}{
+						"value": v,
+					}, tickTime)
+					if err != nil {
+						logEntry.WithField("directory_mapping", k).WithError(err).Errorln("error creating point for influx, skipping...")
+						continue
+					}
+					logEntry.Debugf("adding point: %s", point.String())
 
-			if isDry {
-				logEntry.Infoln("dry run: skipping reporting")
-				continue
-			}
+					batchPoints.AddPoint(point)
+				}
 
-			log.Infoln("sending points to influx")
-			err = influxClient.Write(batchPoints)
-			if err != nil {
-				log.WithError(err).Errorln("error writing points to influx")
+				if isDry {
+					logEntry.Infoln("dry run: skipping reporting")
+					continue
+				}
+
+				log.Infoln("sending points to influx")
+				err = influxClient.Write(batchPoints)
+				if err != nil {
+					log.WithError(err).Errorln("error writing points to influx")
+				}
 			}
 		}
 	}()
@@ -189,23 +214,23 @@ func main() {
 	return
 }
 
-func getAllDirSizesInBytes(logEntry *log.Entry, directories []string) map[string]int64 {
+func getAllDirSizesInBytes(logEntry *log.Entry, directoryMappings []DirectoryMapping) map[DirectoryMapping]int64 {
 
 	log.Traceln("starting directory scan")
 
-	directorySizeMap := map[string]int64{}
+	directorySizeMap := map[DirectoryMapping]int64{}
 
-	for _, directory := range directories {
-		log.WithField("directory", directory).Traceln("starting directory scan")
+	for _, directoryMapping := range directoryMappings {
+		log.WithField("directory_mapping", directoryMapping).Traceln("starting directory scan")
 
-		directorySize, err := getSingleDirSizeInBytes(logEntry, directory)
+		directorySize, err := getSingleDirSizeInBytes(logEntry, directoryMapping.Internal)
 		if err != nil {
 			log.WithError(err).Errorln("error getting directory size, skipping...")
 			continue
 		}
-		directorySizeMap[directory] = directorySize
+		directorySizeMap[directoryMapping] = directorySize
 
-		log.WithField("directory", directory).Traceln("finished directory scan")
+		log.WithField("directory_mapping", directoryMapping).Traceln("finished directory scan")
 	}
 
 	log.Traceln("finished directory scan")
