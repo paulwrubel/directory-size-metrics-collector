@@ -108,7 +108,7 @@ func main() {
 	// expanding directories to desired depth
 	log.Infoln("expanding directories to desired depth")
 	for i, set := range sets {
-		for j := 0; i < set.Depth; j++ {
+		for j := 0; j < set.Depth; j++ {
 			newDirMappingSlice := []DirectoryMapping{}
 			for _, directoryMapping := range sets[i].DirectoryMappings {
 				subdirs, err := os.ReadDir(directoryMapping.Internal)
