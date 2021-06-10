@@ -105,32 +105,6 @@ func main() {
 		}
 	}
 
-	// expanding directories to desired depth
-	log.Infoln("expanding directories to desired depth")
-	for i, set := range sets {
-		for j := 0; j < set.Depth; j++ {
-			newDirMappingSlice := []DirectoryMapping{}
-			for _, directoryMapping := range sets[i].DirectoryMappings {
-				subdirs, err := os.ReadDir(directoryMapping.Internal)
-				if err != nil {
-					log.WithError(err).WithField("directory", directoryMapping.Internal).Fatalln("error reading directory for expansion")
-				}
-				for _, subdir := range subdirs {
-					if subdir.IsDir() {
-						newDirMapping := DirectoryMapping{
-							External: filepath.Join(directoryMapping.External, subdir.Name()),
-							Internal: filepath.Join(directoryMapping.Internal, subdir.Name()),
-						}
-						log.WithField("new_mapping", newDirMapping).Debugln("appending to new mapping")
-						newDirMappingSlice = append(newDirMappingSlice, newDirMapping)
-					}
-				}
-			}
-			log.Debugln("updating mapping for %v with sub-mappings", sets[i].DirectoryMappings)
-			sets[i].DirectoryMappings = newDirMappingSlice
-		}
-	}
-
 	// initializing influxdb client
 	address := viper.GetString("influx.address")
 	log.WithField("address", address).Infoln("initializing influxdb client")
@@ -155,6 +129,9 @@ func main() {
 			for _, set := range sets {
 				tickTime := time.Now()
 				logEntry := log.WithTime(tickTime).WithField("set", set.Name)
+
+				logEntry.Infoln("expanding directories")
+				set.DirectoryMappings = expandDirectories(set.DirectoryMappings, set.Depth)
 
 				logEntry.Infoln("starting scan")
 
@@ -218,6 +195,35 @@ func main() {
 
 	log.Infoln("shutting down...")
 	return
+}
+
+func expandDirectories(directoryMappings []DirectoryMapping, depth int) []DirectoryMapping {
+
+	if depth <= 0 {
+		return directoryMappings
+	}
+
+	// expanding directories to desired depth
+	log.Infoln("expanding directories by one layer")
+	newDirMappings := []DirectoryMapping{}
+	for _, directoryMapping := range directoryMappings {
+		subdirs, err := os.ReadDir(directoryMapping.Internal)
+		if err != nil {
+			log.WithError(err).WithField("directory", directoryMapping.Internal).Fatalln("error reading directory for expansion")
+		}
+		for _, subdir := range subdirs {
+			if subdir.IsDir() {
+				newDirMapping := DirectoryMapping{
+					External: filepath.Join(directoryMapping.External, subdir.Name()),
+					Internal: filepath.Join(directoryMapping.Internal, subdir.Name()),
+				}
+				log.WithField("new_mapping", newDirMapping).Debugln("appending to new mapping")
+				newDirMappings = append(newDirMappings, newDirMapping)
+			}
+		}
+	}
+
+	return expandDirectories(newDirMappings, depth-1)
 }
 
 func getAllDirSizesInBytes(logEntry *log.Entry, directoryMappings []DirectoryMapping) map[DirectoryMapping]int64 {
